@@ -5,6 +5,7 @@ from flask.ext.sqlalchemy import SQLAlchemy
 from flask.ext.httpauth import HTTPBasicAuth
 from passlib.apps import custom_app_context as pwd_context
 from itsdangerous import TimedJSONWebSignatureSerializer as Serializer, BadSignature, SignatureExpired
+from stock_cutting import *
 
 # initialization
 app = Flask(__name__)
@@ -57,6 +58,7 @@ def verify_password(username_or_token, password):
     return True
 
 @app.route('/api/users', methods = ['POST'])
+@auth.login_required
 def new_user():
     username = request.json.get('username')
     password = request.json.get('password')
@@ -70,23 +72,77 @@ def new_user():
     db.session.commit()
     return jsonify({ 'username': user.username }), 201, {'Location': url_for('get_user', id = user.id, _external = True)}
 
-@app.route('/api/users/<int:id>')
-def get_user(id):
-    user = User.query.get(id)
-    if not user:
-        abort(400)
-    return jsonify({ 'username': user.username })
-
 @app.route('/api/token')
 @auth.login_required
 def get_auth_token():
-    token = g.user.generate_auth_token(600)
-    return jsonify({ 'token': token.decode('ascii'), 'duration': 600 })
+    token = g.user.generate_auth_token(10000)
+    return jsonify({ 'token': token.decode('ascii'), 'duration': 10000 })
 
-@app.route('/api/resource')
+@app.route('/api/solve')
 @auth.login_required
-def get_resource():
-    return jsonify({ 'data': 'Hello, %s!' % g.user.username })
+def solve_stock_cutting():
+    args = request.args
+    stock_quantities = map(lambda x: int(x), args.get('stockQuantities').split(","))
+    stock_widths = map(lambda x: int(x), args.get('stockWidths').split(","))
+    demand_quantities = map(lambda x: int(x), args.get('demandQuantities').split(","))
+    demand_widths = map(lambda x: int(x), args.get('demandWidths').split(","))
+
+    print stock_quantities
+    print stock_widths
+    print demand_quantities
+    print demand_widths
+
+    if stock_quantities is None or stock_widths is None or demand_quantities is None or demand_widths is None:
+        abort(400) #missing arguments
+    if len(stock_quantities) != len(stock_widths) or len(demand_quantities) != len(demand_widths):
+        abort(400) #lengths wrong
+
+    stocks = []
+    for index, stock in enumerate(stock_quantities):
+        stocks.append(Stock(stock_widths[index], stock))
+
+    demands = []
+    for index, demand in enumerate(demand_quantities):
+        demands.append(Demand(demand_widths[index], demand))
+
+    #stocks = [Stock(57,21)]
+    #demands = [Demand(18, 35), Demand(21, 9), Demand(27,5)]
+    oc = OptimalCutting(stocks, demands)
+    lp, patterns = oc.solve()
+    # print 'Z = %g;' % lp.obj.value
+    # print '; '.join('%s = %g' % (c.name, c.primal) for c in lp.cols)
+    # print 'Status %s' % lp.status
+    patterns.pop()
+    used = 0
+
+    answer = []
+    for i, pattern in enumerate(patterns):
+        if lp.cols[i].primal >= 1:
+            used += lp.cols[i].primal
+            # print "stock specs:"
+            # print "\tlength: %g" % pattern.stock.length
+            # print "\tavailable: %g" % pattern.stock.quantity
+            print "\tuse: %g" % lp.cols[i].primal
+            # print '\tcuts:'
+            demand_obtained = []
+            for j, demand in enumerate(pattern.demands):
+                if pattern.quantities[j] >= 1:
+                    demand_obtained.append({
+                        'width': demand.length,
+                        'quantity': pattern.quantities[j]
+                        })
+            #     print '\t\tlength: %g, number_cuts: %g' % (demand.length, pattern.quantities[index])
+            # print "\t\twaste: %g" % pattern.leftover
+            answer.append({
+                'width': pattern.stock.length,
+                'quantity': int(lp.cols[i].primal),
+                'demandObtained': demand_obtained,
+                'waste': pattern.leftover
+                })
+
+    #print "Stocks used: %g" % used
+
+    return jsonify({ 'rawsUsed': answer, 'totalRawsUsed': used })
 
 if __name__ == '__main__':
     if not os.path.exists('db.sqlite'):

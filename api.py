@@ -107,7 +107,7 @@ def solve_stock_cutting():
 
     #stocks = [Stock(57,21)]
     #demands = [Demand(18, 35), Demand(21, 9), Demand(27,5)]
-    oc = OptimalCutting(stocks, demands)
+    oc = OptimalCuttingRelaxed(stocks, demands)
     lp, patterns = oc.solve()
     # print 'Z = %g;' % lp.obj.value
     # print '; '.join('%s = %g' % (c.name, c.primal) for c in lp.cols)

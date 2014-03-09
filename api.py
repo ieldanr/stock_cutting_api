@@ -80,7 +80,18 @@ def get_auth_token():
 
 @app.route('/api/solve')
 @auth.login_required
-def solve_stock_cutting():
+def solve_stock_cutting_brute_force():
+    print "Solving brute force"
+    return jsonify(solve_stock_cutting(OptimalCuttingBruteForce))
+
+
+@app.route('/api/solve_approx')
+@auth.login_required
+def solve_stock_cutting_approx():
+    print "Solving approx"
+    return jsonify(solve_stock_cutting(OptimalCutting))
+
+def solve_stock_cutting(solver_class):
     args = request.args
     stock_quantities = map(lambda x: int(x), args.get('stockQuantities').split(","))
     stock_widths = map(lambda x: int(x), args.get('stockWidths').split(","))
@@ -107,12 +118,11 @@ def solve_stock_cutting():
 
     #stocks = [Stock(57,21)]
     #demands = [Demand(18, 35), Demand(21, 9), Demand(27,5)]
-    oc = OptimalCuttingRelaxed(stocks, demands)
+    oc = solver_class(stocks, demands)
     lp, patterns = oc.solve()
     # print 'Z = %g;' % lp.obj.value
     # print '; '.join('%s = %g' % (c.name, c.primal) for c in lp.cols)
     # print 'Status %s' % lp.status
-    patterns.pop()
     used = 0
 
     answer = []
@@ -142,7 +152,7 @@ def solve_stock_cutting():
 
     #print "Stocks used: %g" % used
 
-    return jsonify({ 'rawsUsed': answer, 'totalRawsUsed': used })
+    return { 'rawsUsed': answer, 'totalRawsUsed': used }
 
 if __name__ == '__main__':
     if not os.path.exists('db.sqlite'):
